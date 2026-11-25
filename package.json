@@ -1,0 +1,32 @@
+{
+  "name": "lyricsync",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Synced lyrics player with multi-language translation, Spotify integration and favorites. Multilingual UI.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev -w @lyricsync/server\" \"npm run dev -w @lyricsync/web\"",
+    "build": "npm run build -w @lyricsync/web",
+    "start": "npm run start -w @lyricsync/server",
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/shared && tsc -p apps/server && tsc -p apps/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0",
+    "@types/node": "^24.0.0"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "esbuild@0.28.2": true
+  }
+}
