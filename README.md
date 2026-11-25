@@ -112,7 +112,7 @@ Adding another language takes four steps; see [Adding a language](#adding-a-lang
 
 - **Node.js 22.6+**, tested on Node 24. `better-sqlite3` downloads a prebuilt binary during install.
 - **A Spotify account** to create the app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard). In Development Mode, Spotify requires the **app owner** to have an active Premium subscription.
-- **Optional, for translation:** a DeepL API key (the Free plan works), an Anthropic API key, or any OpenAI-compatible endpoint.
+- **For translated lyrics: a DeepL API key** (the Free plan is enough: 500,000 characters per month). Without a translation provider the app still works, but it shows only the original lyrics. An Anthropic API key or any OpenAI-compatible endpoint also works instead of DeepL (see [step 3](#3-set-up-translation-deepl)).
 
 ### 1. Create the Spotify app
 
@@ -144,7 +144,7 @@ cp .env.example .env
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # paste into TOKEN_ENCRYPTION_KEY
 ```
 
-Fill in at least `SPOTIFY_CLIENT_ID` and `TOKEN_ENCRYPTION_KEY`. Every variable is documented in [`.env.example`](.env.example).
+Open the new `.env` and fill in `SPOTIFY_CLIENT_ID` (from step 1) and `TOKEN_ENCRYPTION_KEY` (the value printed by the `node -e` command). These two are required: without them the server starts but shows a configuration warning and login stays disabled. For translation, also set `TRANSLATION_PROVIDER` and `TRANSLATION_API_KEY` ([step 3](#3-set-up-translation-deepl)). Every variable is documented in [`.env.example`](.env.example).
 
 | Variable | Required | Description |
 |---|---|---|
@@ -165,13 +165,51 @@ Fill in at least `SPOTIFY_CLIENT_ID` and `TOKEN_ENCRYPTION_KEY`. Every variable 
 
 > Never commit `.env`. It is git-ignored; only `.env.example` is tracked.
 
-### 3. Run
+### 3. Set up translation (DeepL)
+
+Translation is what puts each line's translation under the original. DeepL is the recommended provider: it is classic machine translation (no LLM), and the Free plan covers personal use.
+
+1. Create a free account at [deepl.com/pro-api](https://www.deepl.com/pro-api) (choose **DeepL API Free**). A card is required for verification; the Free plan is not charged.
+2. Open [deepl.com/your-account/keys](https://www.deepl.com/your-account/keys) and copy your **Authentication Key**. Free keys end with `:fx`.
+3. In `.env`, set:
+   ```bash
+   TRANSLATION_PROVIDER=deepl
+   TRANSLATION_API_KEY=your-key-here:fx
+   ```
+   Free keys (`:fx`) automatically use `api-free.deepl.com`; any other key uses `api.deepl.com`. You do not set the endpoint or `TRANSLATION_MODEL`.
+4. Start (or restart) the server. Changes to `.env` are only read at startup.
+
+The key stays on the server; the browser never sees it. To use another provider instead, set `TRANSLATION_PROVIDER=anthropic` (optional `TRANSLATION_MODEL`) or `TRANSLATION_PROVIDER=openai` (requires `TRANSLATION_MODEL`, optional `TRANSLATION_BASE_URL`). With `TRANSLATION_PROVIDER=none`, or no key, only the original lyrics are shown.
+
+**What happens when a song plays** (details in [How it works](#how-it-works)):
+1. The server fetches the lyrics and detects their language. Lines already in your chosen language are skipped.
+2. Repeated lines, such as choruses, are translated once.
+3. The unique lines go to DeepL in batches of up to 50, with the title and artist as context.
+4. The answer is validated line by line; if it does not match, the server retries and then falls back to stanza-sized blocks.
+5. The result is saved in the local SQLite database, so each song is translated only once per language.
+
+### 4. Run
 
 ```bash
 npm run dev        # API on 127.0.0.1:8787 + Vite on 127.0.0.1:5173
 ```
 
-Open **http://127.0.0.1:5173**, not `localhost`, because the session cookie is per host. Follow the tutorial or click **Connect to Spotify**, then press play on any device. The lyrics show up within a few seconds.
+Open **http://127.0.0.1:5173**, not `localhost`, because the session cookie is per host. Follow the tutorial or click **Connect to Spotify**, then press play on any device. The lyrics show up within a few seconds, with the translation under each line.
+
+The terminal prints `INFO: Server listening at http://127.0.0.1:8787`. If it also prints `WARN: incomplete configuration`, the line after it names the missing `.env` value.
+
+**Troubleshooting**
+
+| Symptom | Cause and fix |
+|---|---|
+| `WARN: incomplete configuration` with `SPOTIFY_CLIENT_ID is not set` | `.env` is missing, or still has the `your_spotify_client_id_here` placeholder. Paste the real Client ID and restart |
+| `TOKEN_ENCRYPTION_KEY is missing or invalid` | It must be 32 bytes as 64 hex characters (or base64). Regenerate it with the `node -e` command in step 2 |
+| Spotify says `INVALID_CLIENT: Invalid redirect URI` | The Redirect URI in the Dashboard must be exactly `http://127.0.0.1:8787/callback` |
+| Login works for you but not for a friend | Add their Spotify account email under **User Management** in the Dashboard (step 1.5) |
+| Lyrics appear, but no translation: "Machine translation is not configured" | `TRANSLATION_PROVIDER` or `TRANSLATION_API_KEY` is empty. Follow step 3 and restart |
+| "DeepL rejected the key" | Wrong or revoked key. Copy it again from your DeepL account, including the `:fx` suffix |
+| "The monthly DeepL quota is used up" | The Free plan limit was reached. Wait for the next month or upgrade the plan; cached songs keep working |
+| Play, pause and volume are disabled | Spotify only allows playback control for Premium accounts. Lyrics and translation still work |
 
 Production build, served by the API server:
 
